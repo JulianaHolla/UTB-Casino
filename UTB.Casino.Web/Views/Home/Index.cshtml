@@ -1,0 +1,47 @@
+@model IndexViewModel
+@{ ViewData["Title"] = "Lobby"; }
+<h1>Pick a table</h1>
+@if (User.Identity?.IsAuthenticated != true)
+{
+    <p><a asp-controller="Account" asp-action="Login">Log in</a> or <a asp-controller="Account" asp-action="Register">register</a> to play with free credits.</p>
+}
+
+<div class="row g-3 my-3">
+@foreach (var g in Model.Games)
+{
+    <div class="col-12 col-md-6 col-lg-4">
+        <a class="card game h-100 text-decoration-none" asp-area="" asp-controller="@g.Slug.ToString()" asp-action="Play">
+            @if (!string.IsNullOrEmpty(g.ImagePath)) { <img src="@g.ImagePath" class="card-img-top game-img" alt="@g.Name" /> }
+            <div class="card-body">
+                <h2 class="h4">@g.Name</h2>
+                <p>@g.Description</p>
+                <small class="text-brass">Bets @g.MinBet.ToString("N0") to @g.MaxBet.ToString("N0")</small>
+            </div>
+        </a>
+    </div>
+}
+</div>
+
+@if (User.Identity?.IsAuthenticated == true)
+{
+    <h2 class="h4 mt-4">Your last bets</h2>
+    @if (!Model.RecentBets.Any())
+    {
+        <p>No bets yet. Choose a table to place your first one.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+        <table class="table">
+            <thead><tr><th>Game</th><th>Result</th><th class="text-end">Bet</th><th class="text-end">Returned</th></tr></thead>
+            <tbody>
+            @foreach (var b in Model.RecentBets)
+            {
+                <tr><td>@b.Game?.Name</td><td>@b.Result</td><td class="text-end">@b.Amount.ToString("N2")</td>
+                    <td class="text-end @(b.Payout > 0 ? "text-success" : "text-danger")">@b.Payout.ToString("N2")</td></tr>
+            }
+            </tbody>
+        </table>
+        </div>
+    }
+}

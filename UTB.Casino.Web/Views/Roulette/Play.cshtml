@@ -1,0 +1,33 @@
+@model RouletteViewModel
+@{ ViewData["Title"] = Model.Game.Name; }
+<h1>@Model.Game.Name</h1>
+@if (!string.IsNullOrEmpty(Model.Message)) { <div class="alert @(Model.IsError ? "alert-danger" : Model.Result?.Payout > 0 ? "alert-success" : "alert-secondary")">@Model.Message</div> }
+
+@if (Model.Result != null)
+{
+    <div class="ball @Model.Result.Color" id="roulette-result" data-number="@Model.Result.Number">@Model.Result.Number</div>
+}
+
+<form asp-action="Play" method="post" class="bet-form">
+    <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+    <div class="mb-3">
+        <label for="BetType" class="form-label">Bet on</label>
+        <select id="BetType" name="BetType" asp-items="@(new SelectList(RouletteViewModel.BetTypes, nameof(BetTypeOption.Value), nameof(BetTypeOption.Text)))" class="form-select"></select>
+    </div>
+    <div class="mb-3" id="number-group">
+        <label for="Number" class="form-label">Number (0 to 36)</label>
+        <input id="Number" name="Number" type="number" min="0" max="36" class="form-control" value="@Model.Number" />
+        <span asp-validation-for="Number" class="text-danger"></span>
+    </div>
+    <div class="mb-3">
+        <label for="Amount" class="form-label">Bet (@Model.Game.MinBet.ToString("N0") to @Model.Game.MaxBet.ToString("N0"))</label>
+        <input id="Amount" name="Amount" type="number" step="0.01" class="form-control" value="@Model.Amount" />
+    </div>
+    <button type="submit" class="btn btn-brass">Spin the wheel</button>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>window.selectedBetType = "@Model.BetType";</script>
+    <script src="~/js/roulette-wheel.js" asp-append-version="true"></script>
+}

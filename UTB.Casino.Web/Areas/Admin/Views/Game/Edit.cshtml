@@ -1,0 +1,5 @@
+@model GameEditViewModel
+@{ ViewData["Title"] = "Edit game"; }
+<h1>Edit @Model.Name</h1>
+<form asp-action="Edit" method="post" enctype="multipart/form-data" class="bet-form"><partial name="_GameForm" model="Model" /></form>
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }

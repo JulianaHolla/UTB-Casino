@@ -1,0 +1,16 @@
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootheslo
+      MYSQL_DATABASE: utb_casino
+      MYSQL_USER: casino_app
+      MYSQL_PASSWORD: gamble
+    ports:
+      - "3307:3306"
+    volumes:
+      - casino_db:/var/lib/mysql
+
+volumes:
+  casino_db:
