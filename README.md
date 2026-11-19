@@ -98,8 +98,9 @@ Migrace vytvoří dva účty. V kódu jsou pouze **hashe** hesel, samotná hesla
 
 | Přihlašovací jméno | E-mail | Role | Heslo |
 |:---|:---|:---|:---|
-| `admin` | `admin@casino.local` | Admin | `<doplňte heslo>` |
-| `manager` | `manager@casino.local` | Manager | `<doplňte heslo>` |
+| `admin` | `admin@casino.local` | Admin | `HJNh5aqwtmHn6Y^3` |
+| `manager` | `manager@casino.local` | Manager | `61dziVPkU6605r%4` |
+
 
 Účty zákazníků vznikají registrací na stránce Register (heslo min. 8 znaků).
 
