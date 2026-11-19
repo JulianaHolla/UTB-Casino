@@ -1,116 +1,130 @@
-# UTB Casino: How to Run the Project
+# Virtuální kasino UTB
 
-ASP.NET Core MVC (.NET 10) app with a MySQL 8 database that runs in Docker.
+Semestrální projekt do předmětu **Pokročilé webové technologie**.
 
-## 1. Prerequisites
+## 👥 Členové týmu a poměr práce
+| Jméno a příjmení | Role v týmu | Poměr práce |
+|:---|:---|:---:|
+| **Juliana Hollá** | Vedoucí | 1 |
+| **Vojtěch Siuda** | Spoluvedoucí | 1 |
 
-Install these once per computer:
+---
 
-| Tool | Notes |
-|---|---|
-| [.NET 10 SDK](https://dotnet.microsoft.com/download) | Check with `dotnet --version` |
-| [Docker Desktop](https://www.docker.com/products/docker-desktop/) | Must be **running** (whale icon in the tray) |
-| `dotnet-ef` tool | Installed in step 2 below |
+## 🚀 Spuštění projektu
 
-Port **3307** on your computer must be free (the database uses it).
+### Co je potřeba mít nainstalované před spuštěním
 
-## 2. One-time setup
+| Nástroj | Poznámka |
+|:---|:---|
+| **.NET SDK 10** | Kontrola: `dotnet --version` |
+| **Docker Desktop** | Musí být **spuštěný** |
+| Volný port **3307** | Používá ho databáze. Nesmí ho obsazovat jiná aplikace |
+| Visual Studio 2026 / JetBrains Rider | Volitelné, aplikaci lze spustit i z terminálu |
 
-Open a terminal in the folder that contains `docker-compose.yml` (the `UTB_Casino_v4` folder).
+MySQL **není potřeba instalovat**, běží v Dockeru. Nástroj `dotnet-ef` se instaluje prvním příkazem níže.
 
-**Run each command on its own line and don't add `#` comments after commands. Windows `cmd` doesn't support them.**
+### Příkazy pro spuštění
 
-**Install the EF Core tool:**
+Zadávejte je po jednom v terminálu `kořenovém adresáři` kde je `docker-compose.yml`:
 
+1. Nainstaluje nástroj pro migraci – stačí to udělat jen jednou; po dokončení otevřete nový terminál 
 ```
 dotnet tool install --global dotnet-ef
 ```
 
-Close the terminal and open a new one afterwards so the tool is found.
-
-**Start the database:**
-
+2. Stáhne a spustí databázi MySQL v Dockeru. Při prvním spuštění chvíli počkejte (cca 20–30 s). Připravenost ověříte příkazem `docker compose logs db` (hláška `ready for connections`, `port: 3306`).
 ```
 docker compose up -d
 ```
-
-Wait 20–30 seconds on the first start. Check that it is ready:
-
-```
-docker compose logs db
-```
-
-You should see `ready for connections` with `port: 3306`. If not, wait a bit and run the command again.
-
-**Create the tables and seed data:**
-
+3. Vytvoří databázi z migrací: schéma, číselníky (role, typy transakcí, hry) a účty `admin` a `manager`. Aplikace databázi nikdy sama nevytváří ani nemigruje, proto je tento krok nutný.
 ```
 dotnet ef database update -p UTB.Casino.Infrastructure -s UTB.Casino.Web
 ```
-
-It should end with `Done.` The app never creates or migrates the database itself, so this step is required.
-
-**Trust the HTTPS development certificate (fresh machines only):**
-
-```
-dotnet dev-certs https --trust
-```
-
-## 3. Run the app
-
-From Visual Studio: set `UTB.Casino.Web` as the startup project and press **F5**.
-
-From the terminal:
-
+4. Spustí aplikaci. Nebo ve Visual Studiu místo toho nastavte UTB.Casino.Web jako Start-up projekt a stiskněte F5
 ```
 dotnet run --project UTB.Casino.Web
 ```
 
-Then open:
+Aplikace pak běží na https://localhost:7100
 
-- https://localhost:7100
-- http://localhost:5100 (redirects to HTTPS)
+---
 
-## 4. Accounts
+## 📂 Struktura řešení
+Vrstvená architektura; závislosti míří dovnitř, **Application a Infrastructure o sobě nevědí** (spojuje je až `Web`):
 
-The migrations seed an `admin` and a `manager` account (`admin@casino.local`, `manager@casino.local`). Only password **hashes** are stored in the code, so ask the project authors for the passwords. Customers register themselves on the Register page (18+ only).
+- `UTB.Casino.Domain`: entity (`Game`, `Bet`, `WalletTransaction`, `TransactionType`), enumy (`Roles`, `GameSlug`, `TransactionTypes`), rozhraní (`IUser`, repozitáře – každé v samostatném souboru, `IUnitOfWork`, `IFileStorage`, `IAccountManager`). **Žádné NuGet balíčky.**
+- `UTB.Casino.Application`: služby, herní logika (Blackjack, Ruleta, Automaty), ViewModely, vlastní validační atributy. Žádné Identity.
+- `UTB.Casino.Infrastructure`: EF Core + MySQL, `CasinoDbContext`, konfigurace entit, seedování, migrace, repozitáře, `UnitOfWork`, Identity (`User`, `Role`, `AccountIdentityManager` – **jediné místo s `UserManager`/`SignInManager`**).
+- `UTB.Casino.Web`: ASP.NET Core MVC – kontrolery, Razor pohledy, administrace (`Areas/Admin`), klientské adaptéry validací.
+- `UTB.Casino.Tests`: unit testy herní logiky a kontrolerů (každý test si vytváří vlastní čistou instanci kontroleru i mocků).
 
-## 5. Run the tests
+## 🛠️ Klíčová implementační rozhodnutí
 
-```
-dotnet test
-```
+### 1. Autentizace a autorizace (ASP.NET Core Identity)
+Ověřování uživatelů zajišťuje ASP.NET Core Identity zapouzdřené v Infrastructure, role (`Admin`, `Manager`, `Customer`) jsou enum `Roles`:
+- Herní a finanční funkce jsou přístupné pouze přihlášeným a ověřeným plnoletým uživatelům (18+) pomocí custom validačního atributu pro kontrolu věku.
+- Správa katalogu her, uživatelů a audit všech sázek i transakcí je izolována v administrátorské oblasti `Areas/Admin` a chráněna autorizačním atributem `[Authorize(Roles = nameof(Roles.Admin))]`.
 
-## 6. Everyday use
+### 2. Herní mechaniky a klientská interaktivita
+Aplikace kombinuje bezpečný výpočet na serveru s plynulou odezvou na klientské straně:
+- **Ruleta a Automaty:** Veškeré vyhodnocení výsledků a sázek probíhá výhradně na backendu. Frontend pouze vizualizuje vylosovaný stav pomocí JavaScriptových animací a HTML5 Canvasu.
+- **Blackjack:** Udržuje stav rozehraného kola hráče napříč jednotlivými tahy (rozdání, Hit, Stand) a dynamicky aktualizuje karty na stole.
 
-| What | Command |
-|---|---|
-| Start the database | `docker compose up -d` |
-| Stop the database (keeps data) | `docker compose stop` |
-| Check the database is up | `docker compose ps` |
-| **Reset the database completely** (deletes all data) | `docker compose down -v` then `docker compose up -d` then the `dotnet ef database update` command from step 2 |
+### 3. Konzistence peněženky a atomické transakce
+Správa zůstatku je striktně kontrolována v aplikační vrstvě:
+- Každá sázka a výhra je evidována jako podvojný záznam: změna v tabulce sázek a odpovídající pohyb v peněžence (typy sázka, výhra, vklad).
+- Všechny operace probíhají v rámci databázové transakce přes vzor `UnitOfWork`, což garantuje atomicitu a brání vzniku záporného zůstatku při rychlých či souběžných požadavcích.
 
-## 7. Troubleshooting
+### 4. Databáze a nasazení
+- Databáze je **MySQL 8** běžící v Dockeru (`docker-compose.yml`), schéma vzniká výhradně z EF Core migrací spouštěných mimo aplikaci.
+- Uživatelská hesla jsou ukládána jen jako hashe (ASP.NET Core Identity); v repozitáři jsou pouze hashe seedovaných účtů.
 
-| Problem | Cause and fix |
-|---|---|
-| `Unable to connect to any of the specified MySQL hosts` | The database isn't running. Start Docker Desktop, then run `docker compose up -d`. |
-| `Access denied for user 'casino_app'` | The Docker volume was created earlier with different credentials. Reset it: `docker compose down -v`, then `docker compose up -d`, then run the migration again. |
-| Access denied for `'casino_app'@'localhost'` | Another MySQL installation may be using port 3307. Find it with `netstat -ano | findstr 3307` and stop it. |
-| `Could not execute because the specified command or file was not found` (for `dotnet ef`) | The tool isn't installed or the terminal wasn't restarted. See step 2. |
-| `Table '...' doesn't exist` | The migration wasn't applied. Run the `dotnet ef database update` command from step 2. |
-| Wrong credentials even after a reset | A stale User Secret overrides `appsettings.json`. Check with `dotnet user-secrets list --project UTB.Casino.Web` and clear it with `dotnet user-secrets clear --project UTB.Casino.Web`. |
-| Browser warns about the HTTPS certificate | Run `dotnet dev-certs https --trust` and restart the browser. |
+---
 
-## 8. Configuration reference
 
-- Connection string: `UTB.Casino.Web/appsettings.json`, key `ConnectionStrings:MySQL`. Defaults match `docker-compose.yml` (`localhost`, port `3307`, database `utb_casino`, user `casino_app`).
-- To override it without editing files, use User Secrets:
-  ```
-  dotnet user-secrets set "ConnectionStrings:MySQL" "server=localhost;port=3307;database=utb_casino;user=casino_app;password=YOUR_PASSWORD" --project UTB.Casino.Web
-  ```
-- Logs are written to `UTB.Casino.Web/logs/`. Check the newest file first when something fails.
+## 👤 Role a účty
 
-## 9. Before sharing or submitting the project
+### Role
+Role jsou definovány enumem `Roles` a naplněny migrací (tabulka `AspNetRoles`):
 
-Delete these folders to keep the zip small and avoid leaking machine-specific files: `.vs`, `bin`, `obj`, `UTB.Casino.Web/logs`. The other computer will rebuild what it needs.
+| Role | Přístup |
+|:---|:---|
+| **Admin** | Vše, včetně administrace: správa her, sázky, transakce a **správa uživatelů** (úprava jména, e-mailu, blokace a změna role). |
+| **Manager** | Administrace her, přehled všech sázek a transakcí. **Nemá přístup ke správě uživatelů.** |
+| **Customer** | Hraje hry a spravuje svou peněženku. Do administrace nemá přístup. Nový zákazník se registruje sám (pouze 18+). |
+
+### Předvytvořené účty
+Migrace vytvoří dva účty. V kódu jsou pouze **hashe** hesel, samotná hesla v repozitáři nejsou.
+
+| Přihlašovací jméno | E-mail | Role | Heslo |
+|:---|:---|:---|:---|
+| `admin` | `admin@casino.local` | Admin | `<doplňte heslo>` |
+| `manager` | `manager@casino.local` | Manager | `<doplňte heslo>` |
+
+Účty zákazníků vznikají registrací na stránce Register (heslo min. 8 znaků).
+
+---
+## ⚠️ Časté chyby a jejich řešení
+
+| Chyba | Příčina a řešení |
+|:---|:---|
+| `Unable to connect to any of the specified MySQL hosts` | Databáze neběží. Spusťte Docker Desktop a zadejte `docker compose up -d`. Stav zkontrolujete příkazem `docker compose ps`. |
+| `failed to connect to the docker API` / `docker daemon is not running` | Docker Desktop není spuštěný. Spusťte ho a počkejte, až naběhne. |
+| `Access denied for user 'casino_app'` | Docker volume byl dříve vytvořen s jinými přihlašovacími údaji. Proveďte reset: `docker compose down -v`, poté `docker compose up -d` a znovu `dotnet ef database update -p UTB.Casino.Infrastructure -s UTB.Casino.Web`. |
+| `Access denied for user 'casino_app'@'localhost'` | Na portu 3307 pravděpodobně odpovídá jiný (lokálně nainstalovaný) MySQL server. Zjistěte příkazem `netstat -ano \| findstr 3307` (Windows) a ukončete ho. |
+| `port is already allocated` / `Bind for 0.0.0.0:3307 failed` | Port 3307 používá jiný program nebo starý kontejner. Ukončete ho, případně `docker compose down` a spusťte znovu. |
+| `Could not execute because the specified command or file was not found` (u `dotnet ef`) | Není nainstalovaný `dotnet-ef` nebo nebyl po instalaci otevřen nový terminál. Spusťte `dotnet tool install --global dotnet-ef` a otevřete nový terminál. |
+| `Table '...' doesn't exist` | Nebyly aplikovány migrace. Spusťte `dotnet ef database update -p UTB.Casino.Infrastructure -s UTB.Casino.Web`. |
+| `no such service: #` | Za příkaz byl zkopírován komentář začínající `#`. Windows `cmd` komentáře nepodporuje, zadávejte příkazy bez nich. |
+| Aplikace se připojuje s jinými údaji, než jsou v `appsettings.json` | Přepisuje je uložený User Secret. Zkontrolujte `dotnet user-secrets list --project UTB.Casino.Web` a případně smažte `dotnet user-secrets clear --project UTB.Casino.Web`. |
+| Prohlížeč hlásí problém s HTTPS certifikátem | Spusťte `dotnet dev-certs https --trust` a restartujte prohlížeč. |
+| Nelze se přihlásit jako `admin` / `manager` | Hesla těchto účtů nejsou v repozitáři, ptejte se autorů. Alternativně se zaregistrujte jako zákazník. |
+
+Podrobnosti o chybě za běhu aplikace najdete v nejnovějším souboru ve složce `UTB.Casino.Web/logs/`.
+
+---
+
+## 📝 Poznámky k odevzdání
+- **Stav:** Projekt je plně funkční (obsahuje 3 plnohodnotné hry, peněženku a administraci).
+- **Testování:** Unit testy v `UTB.Casino.Tests` ověřují férovost a matematiku herních pravidel a správné reakce systému při nedostatku kreditu.
+- **Problémy:** Hlavní výzvou bylo spolehlivé držení stavu rozehraného kola Blackjacku mezi jednotlivými HTTP požadavky a synchronizace vizuální animace s výsledkem vyhodnoceným na serveru.
